@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>4S — Servicios de Oficios y Maestros</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- UMD React, ReactDOM, Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        :root {
+            --bg-dark: #0f111a;
+            --glass-bg: rgba(20, 24, 41, 0.65);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --glass-border-focus: rgba(0, 198, 255, 0.3);
+            --accent-cyan: #00c6ff;
+            --accent-blue: #0072ff;
+            --text-primary: #f3f4f6;
+            --text-secondary: #9ca3af;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: radial-gradient(circle at 50% 0%, #1e2235 0%, var(--bg-dark) 70%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Glassmorphism Card style */
+        .glass-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .glass-card:hover {
+            border-color: rgba(255, 255, 255, 0.15);
+            box-shadow: 0 12px 40px 0 rgba(0, 198, 255, 0.1);
+        }
+
+        .glass-input {
+            background: rgba(10, 12, 22, 0.5);
+            border: 1px solid var(--glass-border);
+            color: var(--text-primary) !important;
+            border-radius: 10px;
+            transition: all 0.3s ease;
+        }
+        .glass-input:focus {
+            background: rgba(10, 12, 22, 0.7);
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 10px rgba(0, 198, 255, 0.2);
+            outline: none;
+        }
+
+        .btn-premium {
+            background: linear-gradient(135deg, var(--accent-cyan) 0%, var(--accent-blue) 100%);
+            border: none;
+            color: #fff;
+            font-weight: 600;
+            border-radius: 10px;
+            padding: 10px 20px;
+            box-shadow: 0 4px 15px rgba(0, 198, 255, 0.3);
+            transition: all 0.3s ease;
+        }
+        .btn-premium:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 198, 255, 0.5);
+        }
+
+        .btn-outline-premium {
+            background: transparent;
+            border: 2px solid var(--accent-cyan);
+            color: var(--accent-cyan);
+            font-weight: 600;
+            border-radius: 10px;
+            padding: 8px 18px;
+            transition: all 0.3s ease;
+        }
+        .btn-outline-premium:hover {
+            background: var(--accent-cyan);
+            color: var(--bg-dark);
+            box-shadow: 0 4px 15px rgba(0, 198, 255, 0.3);
+        }
+
+        .badge-status {
+            font-size: 0.75rem;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+        .status-pendiente {
+            background: rgba(245, 158, 11, 0.2);
+            color: #fbbf24;
+            border: 1px solid rgba(245, 158, 11, 0.4);
+        }
+        .status-aceptado {
+            background: rgba(59, 130, 246, 0.2);
+            color: #60a5fa;
+            border: 1px solid rgba(59, 130, 246, 0.4);
+        }
+        .status-completado {
+            background: rgba(16, 185, 129, 0.2);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.4);
+        }
+
+        /* Nav custom */
+        .premium-navbar {
+            background: rgba(15, 17, 26, 0.85);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        .brand-text {
+            font-weight: 800;
+            letter-spacing: 1px;
+            background: linear-gradient(to right, #00c6ff, #0072ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .chat-container {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 15px;
+            background: rgba(0,0,0,0.2);
+        }
+
+        .msg-left {
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px 12px 12px 0;
+            padding: 8px 12px;
+            margin-bottom: 10px;
+            max-width: 80%;
+            align-self: flex-start;
+        }
+
+        .msg-right {
+            background: linear-gradient(135deg, rgba(0, 198, 255, 0.2), rgba(0, 72, 255, 0.2));
+            border-radius: 12px 12px 0 12px;
+            padding: 8px 12px;
+            margin-bottom: 10px;
+            max-width: 80%;
+            align-self: flex-end;
+        }
+
+        .rating-star {
+            color: #fbbf24;
+            margin-right: 3px;
+        }
+
+        /* Transitions */
+        .fade-in {
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        function App() {
+            // State variables
+            const [currentUser, setCurrentUser] = useState(null);
+            const [view, setView] = useState("login"); // login | register | marketplace | profile | panel
+            const [maestros, setMaestros] = useState([]);
+            const [selectedMaestro, setSelectedMaestro] = useState(null);
+            const [services, setServices] = useState([]);
+            
+            // Search / Filter inputs
+            const [filterCategory, setFilterCategory] = useState("");
+            const [filterPrice, setFilterPrice] = useState("");
+            const [filterRating, setFilterRating] = useState("");
+            const [filterCity, setFilterCity] = useState("");
+
+            // Form inputs
+            const [regName, setRegName] = useState("");
+            const [regEmail, setRegEmail] = useState("");
+            const [regPass, setRegPass] = useState("");
+            const [regRole, setRegRole] = useState("cliente");
+            const [regCity, setRegCity] = useState("");
+
+            const [loginEmail, setLoginEmail] = useState("");
+            const [loginPass, setLoginPass] = useState("");
+
+            // Maestro profile edit
+            const [mDesc, setMDesc] = useState("");
+            const [mSpecs, setMSpecs] = useState("");
+            const [mPrice, setMPrice] = useState("");
+            const [mCover, setMCover] = useState("");
+
+            // Work Request Form
+            const [workDesc, setWorkDesc] = useState("");
+            const [workCat, setWorkCat] = useState("Gasfitería");
+
+            // Chat simulation
+            const [chatMessages, setChatMessages] = useState([
+                { sender: "system", text: "Coordinación iniciada. ¡Escríbele para agendar!" }
+            ]);
+            const [chatInput, setChatInput] = useState("");
+            const [activeServiceChat, setActiveServiceChat] = useState(null);
+
+            // Review Modal
+            const [reviewScore, setReviewScore] = useState(5);
+            const [reviewComment, setReviewComment] = useState("");
+            const [activeServiceReview, setActiveServiceReview] = useState(null);
+
+            const [alert, setAlert] = useState(null);
+
+            const triggerAlert = (type, message) => {
+                setAlert({ type, message });
+                setTimeout(() => setAlert(null), 4000);
+            };
+
+            // Fetch Maestros Catalogs
+            const fetchMaestros = async () => {
+                try {
+                    let url = "/api/maestros";
+                    const params = [];
+                    if (filterCategory) params.push(`categoria=${filterCategory}`);
+                    if (filterCity) params.push(`ciudad=${filterCity}`);
+                    if (filterPrice) params.push(`precio_max=${filterPrice}`);
+                    if (filterRating) params.push(`rating_min=${filterRating}`);
+                    if (params.length > 0) {
+                        url += "?" + params.join("&");
+                    }
+                    const res = await fetch(url);
+                    if (res.ok) {
+                        const data = await res.json();
+                        setMaestros(data);
+                    }
+                } catch (e) {
+                    console.error("Error al obtener maestros", e);
+                }
+            };
+
+            useEffect(() => {
+                if (view === "marketplace") {
+                    fetchMaestros();
+                }
+            }, [view, filterCategory, filterPrice, filterRating, filterCity]);
+
+            // Fetch Service Requests
+            const fetchServices = async () => {
+                if (!currentUser) return;
+                try {
+                    const res = await fetch(`/api/services?user_id=${currentUser.id}&role=${currentUser.tipo}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        setServices(data);
+                    }
+                } catch (e) {
+                    console.error(e);
+                }
+            };
+
+            useEffect(() => {
+                if (view === "panel") {
+                    fetchServices();
+                }
+            }, [view, currentUser]);
+
+            // Handle Register
+            const handleRegister = async (e) => {
+                e.preventDefault();
+                try {
+                    const res = await fetch("/api/users/register", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            nombre: regName,
+                            email: regEmail,
+                            password: regPass,
+                            tipo: regRole,
+                            ciudad: regCity
+                        })
+                    });
+                    if (res.ok) {
+                        triggerAlert("success", "¡Usuario registrado con éxito! Inicia sesión.");
+                        setView("login");
+                        // Reset
+                        setRegName(""); setRegEmail(""); setRegPass(""); setRegCity("");
+                    } else {
+                        const err = await res.json();
+                        triggerAlert("danger", err.detail || "Fallo en el registro");
+                    }
+                } catch (e) {
+                    triggerAlert("danger", "Error de conexión con el servidor");
+                }
+            };
+
+            // Handle Login
+            const handleLogin = async (e) => {
+                e.preventDefault();
+                try {
+                    const res = await fetch("/api/users/login", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ email: loginEmail, password: loginPass })
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        setCurrentUser(data);
+                        triggerAlert("success", `¡Bienvenido de vuelta, ${data.nombre}!`);
+                        if (data.tipo === "maestro") {
+                            // Fetch profile details
+                            const detailRes = await fetch(`/api/maestros/${data.id}`);
+                            if (detailRes.ok) {
+                                const detail = await detailRes.json();
+                                if (detail.profile) {
+                                    setMDesc(detail.profile.descripcion);
+                                    setMSpecs(detail.profile.especialidades);
+                                    setMPrice(detail.profile.precio_hora);
+                                    setMCover(detail.profile.cobertura);
+                                }
+                            }
+                            setView("panel");
+                        } else {
+                            setView("marketplace");
+                        }
+                    } else {
+                        triggerAlert("danger", "Credenciales incorrectas");
+                    }
+                } catch (e) {
+                    triggerAlert("danger", "Error de conexión");
+                }
+            };
+
+            // Save Maestro Profile details
+            const handleSaveProfile = async (e) => {
+                e.preventDefault();
+                try {
+                    const res = await fetch("/api/maestros/profile", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            maestro_id: currentUser.id,
+                            descripcion: mDesc,
+                            especialidades: mSpecs,
+                            precio_hora: parseFloat(mPrice) || 0.0,
+                            cobertura: mCover
+                        })
+                    });
+                    if (res.ok) {
+                        triggerAlert("success", "¡Perfil de maestro actualizado con éxito!");
+                        setView("panel");
+                    } else {
+                        const err = await res.json();
+                        triggerAlert("danger", err.detail || "Fallo al guardar perfil");
+                    }
+                } catch (e) {
+                    triggerAlert("danger", "Error de conexión");
+                }
+            };
+
+            // Submit Service Request
+            const handleRequestService = async (e) => {
+                e.preventDefault();
+                try {
+                    const res = await fetch("/api/services", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            cliente_id: currentUser.id,
+                            maestro_id: selectedMaestro.id,
+                            descripcion: workDesc,
+                            categoria: workCat
+                        })
+                    });
+                    if (res.ok) {
+                        triggerAlert("success", "¡Solicitud de servicio enviada con éxito! Esperando confirmación del maestro.");
+                        setWorkDesc("");
+                        setView("panel");
+                    } else {
+                        const err = await res.json();
+                        triggerAlert("danger", err.detail || "Error al enviar solicitud");
+                    }
+                } catch (e) {
+                    triggerAlert("danger", "Error de conexión");
+                }
+            };
+
+            // Transition Service Status (Aceptar / Completar)
+            const handleStatusChange = async (serviceId, nuevoEstado) => {
+                try {
+                    const res = await fetch(`/api/services/${serviceId}/status`, {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ estado: nuevoEstado })
+                    });
+                    if (res.ok) {
+                        triggerAlert("success", `¡Trabajo marcado como ${nuevoEstado}!`);
+                        fetchServices();
+                    } else {
+                        triggerAlert("danger", "Error al cambiar estado");
+                    }
+                } catch (e) {
+                    triggerAlert("danger", "Error de conexión");
+                }
+            };
+
+            // Submit Review/Rating
+            const handlePostReview = async (e) => {
+                e.preventDefault();
+                try {
+                    const res = await fetch("/api/evaluations", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            cliente_id: currentUser.id,
+                            maestro_id: activeServiceReview.maestro_id,
+                            solicitud_id: activeServiceReview.id,
+                            puntuacion: parseInt(reviewScore),
+                            comentario: reviewComment
+                        })
+                    });
+                    if (res.ok) {
+                        triggerAlert("success", "¡Calificación y reseña publicadas exitosamente!");
+                        setReviewComment("");
+                        setReviewScore(5);
+                        setActiveServiceReview(null);
+                        fetchServices();
+                    } else {
+                        const err = await res.json();
+                        triggerAlert("danger", err.detail || "Error al enviar reseña");
+                    }
+                } catch (e) {
+                    triggerAlert("danger", "Error de conexión");
+                }
+            };
+
+            // Simulate sending a message in Chat
+            const sendChatMessage = (e) => {
+                e.preventDefault();
+                if (!chatInput.trim()) return;
+                const newMsg = { sender: currentUser.tipo, text: chatInput };
+                setChatMessages(prev => [...prev, newMsg]);
+                setChatInput("");
+
+                // Simulated response after 2 seconds
+                setTimeout(() => {
+                    const respMsg = {
+                        sender: currentUser.tipo === "cliente" ? "maestro" : "cliente",
+                        text: "¡Entendido! Quedamos coordinados para la fecha acordada."
+                    };
+                    setChatMessages(prev => [...prev, respMsg]);
+                }, 1500);
+            };
+
+            return (
+                <div>
+                    {/* Header navbar */}
+                    <nav className="navbar navbar-expand-lg premium-navbar py-3 sticky-top">
+                        <div className="container">
+                            <a className="navbar-brand d-flex align-items-center" href="#" onClick={() => {
+                                if (currentUser) {
+                                    setView(currentUser.tipo === "maestro" ? "panel" : "marketplace");
+                                } else {
+                                    setView("login");
+                                }
+                            }}>
+                                <i className="fa-solid fa-screwdriver-wrench me-2 brand-text" style={{ fontSize: "1.5rem" }}></i>
+                                <span className="brand-text fs-4">4S — FOUR S</span>
+                            </a>
+                            {currentUser && (
+                                <div className="d-flex align-items-center gap-3">
+                                    <span className="text-secondary small">
+                                        Conectado como: <strong>{currentUser.nombre}</strong> ({currentUser.tipo})
+                                    </span>
+                                    {currentUser.tipo === "cliente" && (
+                                        <button className="btn btn-sm btn-outline-premium" onClick={() => setView("marketplace")}>
+                                            <i className="fa-solid fa-search me-1"></i> Buscar
+                                        </button>
+                                    )}
+                                    <button className="btn btn-sm btn-outline-premium" onClick={() => setView("panel")}>
+                                        <i className="fa-solid fa-table-columns me-1"></i> Panel
+                                    </button>
+                                    {currentUser.tipo === "maestro" && (
+                                        <button className="btn btn-sm btn-outline-premium" onClick={() => setView("profile")}>
+                                            <i className="fa-solid fa-user-gear me-1"></i> Perfil
+                                        </button>
+                                    )}
+                                    <button className="btn btn-sm btn-danger" onClick={() => {
+                                        setCurrentUser(null);
+                                        setView("login");
+                                    }}>
+                                        <i className="fa-solid fa-sign-out-alt"></i>
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </nav>
+
+                    <div className="container my-5 fade-in">
+                        {/* Alert Floating */}
+                        {alert && (
+                            <div className={`alert alert-${alert.type} glass-card mb-4 text-center border-0 py-3`} role="alert" style={{ fontSize: '1rem', fontWeight: 500 }}>
+                                <i className={`fa-solid ${alert.type === 'success' ? 'fa-circle-check text-success' : 'fa-circle-exclamation text-danger'} me-2`}></i>
+                                {alert.message}
+                            </div>
+                        )}
+
+                        {/* View 1: Login */}
+                        {view === "login" && (
+                            <div className="row justify-content-center">
+                                <div className="col-md-5">
+                                    <div className="glass-card p-5">
+                                        <h2 className="text-center mb-4 font-extrabold brand-text">Iniciar Sesión</h2>
+                                        <form onSubmit={handleLogin}>
+                                            <div className="mb-3">
+                                                <label className="form-label text-secondary small">Email</label>
+                                                <input type="email" required className="form-control glass-input" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} placeholder="tu@email.com" />
+                                            </div>
+                                            <div className="mb-4">
+                                                <label className="form-label text-secondary small">Contraseña</label>
+                                                <input type="password" required className="form-control glass-input" value={loginPass} onChange={(e) => setLoginPass(e.target.value)} placeholder="••••••••" />
+                                            </div>
+                                            <button type="submit" className="btn btn-premium w-100 mb-3 py-3">Ingresar</button>
+                                        </form>
+                                        <p className="text-center text-secondary small mb-0">
+                                            ¿No tienes cuenta? <a href="#" className="text-info font-semibold" onClick={() => setView("register")}>Regístrate aquí</a>
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* View 2: Register */}
+                        {view === "register" && (
+                            <div className="row justify-content-center">
+                                <div className="col-md-6">
+                                    <div className="glass-card p-5">
+                                        <h2 className="text-center mb-4 brand-text font-extrabold">Crear Cuenta</h2>
+                                        <form onSubmit={handleRegister}>
+                                            <div className="mb-3">
+                                                <label className="form-label text-secondary small">Nombre Completo</label>
+                                                <input type="text" required className="form-control glass-input" value={regName} onChange={(e) => setRegName(e.target.value)} placeholder="Juan Pérez" />
+                                            </div>
+                                            <div className="mb-3">
+                                                <label className="form-label text-secondary small">Email</label>
+                                                <input type="email" required className="form-control glass-input" value={regEmail} onChange={(e) => setRegEmail(e.target.value)} placeholder="juan@email.com" />
+                                            </div>
+                                            <div className="mb-3">
+                                                <label className="form-label text-secondary small">Contraseña</label>
+                                                <input type="password" required className="form-control glass-input" value={regPass} onChange={(e) => setRegPass(e.target.value)} placeholder="Mínimo 4 caracteres" />
+                                            </div>
+                                            <div className="row">
+                                                <div className="col-md-6 mb-3">
+                                                    <label className="form-label text-secondary small">Rol</label>
+                                                    <select className="form-select glass-input" value={regRole} onChange={(e) => setRegRole(e.target.value)}>
+                                                        <option value="cliente">Cliente (Busca servicios)</option>
+                                                        <option value="maestro">Maestro (Ofrece servicios)</option>
+                                                    </select>
+                                                </div>
+                                                <div className="col-md-6 mb-3">
+                                                    <label className="form-label text-secondary small">Ciudad / Comuna</label>
+                                                    <input type="text" required className="form-control glass-input" value={regCity} onChange={(e) => setRegCity(e.target.value)} placeholder="Quillota" />
+                                                </div>
+                                            </div>
+                                            <button type="submit" className="btn btn-premium w-100 mb-3 py-3">Registrarse</button>
+                                        </form>
+                                        <p className="text-center text-secondary small mb-0">
+                                            ¿Ya tienes cuenta? <a href="#" className="text-info font-semibold" onClick={() => setView("login")}>Inicia sesión aquí</a>
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* View 3: Marketplace (Client search view) */}
+                        {view === "marketplace" && (
+                            <div className="row">
+                                <h2 className="mb-4 brand-text font-extrabold"><i className="fa-solid fa-magnifying-glass me-2"></i>Buscar Maestros de Oficio</h2>
+                                {/* Filters Sidebar */}
+                                <div className="col-md-4 mb-4">
+                                    <div className="glass-card p-4">
+                                        <h4 className="mb-3 text-secondary"><i className="fa-solid fa-sliders me-2"></i>Filtros de Búsqueda</h4>
+                                        <div className="mb-3">
+                                            <label className="form-label small text-secondary">Especialidad / Oficio</label>
+                                            <select className="form-select glass-input" value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
+                                                <option value="">Todas las especialidades</option>
+                                                <option value="gasfiteria">Gasfitería</option>
+                                                <option value="carpinteria">Carpintería</option>
+                                                <option value="electricidad">Electricidad</option>
+                                                <option value="pintura">Pintura</option>
+                                                <option value="jardineria">Jardinería</option>
+                                            </select>
+                                        </div>
+                                        <div className="mb-3">
+                                            <label className="form-label small text-secondary">Ciudad / Cobertura</label>
+                                            <input type="text" className="form-control glass-input" value={filterCity} onChange={(e) => setFilterCity(e.target.value)} placeholder="Quillota, La Cruz, etc." />
+                                        </div>
+                                        <div className="mb-3">
+                                            <label className="form-label small text-secondary">Precio Máximo por Hora</label>
+                                            <input type="number" className="form-control glass-input" value={filterPrice} onChange={(e) => setFilterPrice(e.target.value)} placeholder="Ej. 15000" />
+                                        </div>
+                                        <div className="mb-3">
+                                            <label className="form-label small text-secondary">Calificación Mínima</label>
+                                            <select className="form-select glass-input" value={filterRating} onChange={(e) => setFilterRating(e.target.value)}>
+                                                <option value="">Cualquier calificación</option>
+                                                <option value="5">⭐⭐⭐⭐⭐ (5.0)</option>
+                                                <option value="4">⭐⭐⭐⭐ y más (4.0+)</option>
+                                                <option value="3">⭐⭐⭐ y más (3.0+)</option>
+                                            </select>
+                                        </div>
+                                        <button className="btn btn-outline-danger w-100" onClick={() => {
+                                            setFilterCategory(""); setFilterCity(""); setFilterPrice(""); setFilterRating("");
+                                        }}><i className="fa-solid fa-eraser me-2"></i>Limpiar Filtros</button>
+                                    </div>
+                                </div>
+
+                                {/* Results column */}
+                                <div className="col-md-8">
+                                    <div className="row">
+                                        {maestros.length === 0 ? (
+                                            <div className="col-12">
+                                                <div className="glass-card p-5 text-center text-secondary">
+                                                    <i className="fa-solid fa-user-slash fs-2 mb-3 text-warning"></i>
+                                                    <p className="mb-0">No se encontraron maestros activos que coincidan con los filtros.</p>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            maestros.map(maestro => (
+                                                <div className="col-md-6 mb-4" key={maestro.id}>
+                                                    <div className="glass-card p-4 h-100 d-flex flex-column justify-content-between">
+                                                        <div>
+                                                            <div className="d-flex justify-content-between align-items-start mb-3">
+                                                                <h4 className="mb-0 text-white font-bold">{maestro.nombre}</h4>
+                                                                <span className="badge bg-dark border border-secondary text-info">
+                                                                    <i className="fa-solid fa-star text-warning me-1"></i>
+                                                                    {maestro.profile ? maestro.profile.rating_promedio : "N/A"} ({maestro.profile ? maestro.profile.total_evaluaciones : 0})
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-secondary small mb-3">
+                                                                <i className="fa-solid fa-location-dot me-1 text-info"></i> {maestro.ciudad || "No especificado"}
+                                                            </p>
+                                                            <p className="text-secondary mb-3" style={{ fontSize: '0.9rem' }}>
+                                                                {maestro.profile ? maestro.profile.descripcion : "Presentación no configurada."}
+                                                            </p>
+                                                            <div className="mb-3 d-flex flex-wrap gap-2">
+                                                                {maestro.profile && maestro.profile.especialidades.split(',').map((tag, idx) => (
+                                                                    <span className="badge bg-secondary-subtle text-secondary border border-secondary" key={idx}>{tag.trim()}</span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                        <div className="d-flex justify-content-between align-items-center pt-3 border-top border-secondary">
+                                                            <div>
+                                                                <span className="text-secondary small">Tarifa:</span>
+                                                                <h5 className="mb-0 text-success font-extrabold">${maestro.profile ? maestro.profile.precio_hora : "0.0"}/hr</h5>
+                                                            </div>
+                                                            <button className="btn btn-premium btn-sm" onClick={() => {
+                                                                setSelectedMaestro(maestro);
+                                                                setView("profile");
+                                                            }}><i className="fa-solid fa-user me-1"></i>Ver Perfil</button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* View 4: Public profile of Maestro */}
+                        {view === "profile" && selectedMaestro && (
+                            <div className="row justify-content-center">
+                                <div className="col-md-8">
+                                    <button className="btn btn-outline-premium mb-4" onClick={() => setView("marketplace")}>
+                                        <i className="fa-solid fa-arrow-left me-2"></i>Volver al Buscador
+                                    </button>
+                                    <div className="glass-card p-5">
+                                        <div className="d-flex justify-content-between align-items-start border-bottom border-secondary pb-4 mb-4">
+                                            <div>
+                                                <h1 className="text-white font-extrabold mb-1">{selectedMaestro.nombre}</h1>
+                                                <p className="text-secondary mb-0">
+                                                    <i className="fa-solid fa-location-dot me-2 text-info"></i>{selectedMaestro.ciudad} | Cobertura: {selectedMaestro.profile ? selectedMaestro.profile.cobertura : ""}
+                                                </p>
+                                            </div>
+                                            <div className="text-end">
+                                                <div className="badge bg-dark border border-secondary text-info fs-5 py-2 px-3 mb-2">
+                                                    <i className="fa-solid fa-star text-warning me-2"></i>
+                                                    {selectedMaestro.profile ? selectedMaestro.profile.rating_promedio : "0.0"} / 5.0
+                                                </div>
+                                                <p className="text-secondary small mb-0">Basado en {selectedMaestro.profile ? selectedMaestro.profile.total_evaluaciones : 0} evaluaciones</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="row">
+                                            <div className="col-md-7 mb-4">
+                                                <h4 className="text-info mb-3">Presentación Profesional</h4>
+                                                <p className="text-secondary mb-4" style={{ lineHeight: '1.6' }}>
+                                                    {selectedMaestro.profile ? selectedMaestro.profile.descripcion : "Descripción no especificada."}
+                                                </p>
+
+                                                <h4 className="text-info mb-3">Especialidades Oficiales</h4>
+                                                <div className="d-flex flex-wrap gap-2 mb-4">
+                                                    {selectedMaestro.profile && selectedMaestro.profile.especialidades.split(',').map((tag, idx) => (
+                                                        <span className="badge bg-secondary-subtle text-secondary border border-secondary p-2" key={idx} style={{ fontSize: '0.85rem' }}>{tag.trim().toUpperCase()}</span>
+                                                    ))}
+                                                </div>
+
+                                                <h4 className="text-info mb-3">Valor de Servicio</h4>
+                                                <p className="text-success fs-3 font-extrabold">${selectedMaestro.profile ? selectedMaestro.profile.precio_hora : "0.0"} <span className="small text-secondary" style={{ fontSize: '1rem' }}>por hora / referencial</span></p>
+                                            </div>
+
+                                            {/* Solicitar servicio form */}
+                                            <div className="col-md-5">
+                                                <div className="glass-card p-4 border-info">
+                                                    <h4 className="text-center mb-3 text-white">Solicitar Trabajo</h4>
+                                                    <form onSubmit={handleRequestService}>
+                                                        <div className="mb-3">
+                                                            <label className="form-label text-secondary small">Oficio requerido</label>
+                                                            <select className="form-select glass-input" value={workCat} onChange={(e) => setWorkCat(e.target.value)}>
+                                                                <option value="Gasfitería">Gasfitería</option>
+                                                                <option value="Carpintería">Carpintería</option>
+                                                                <option value="Electricidad">Electricidad</option>
+                                                                <option value="Pintura">Pintura</option>
+                                                                <option value="Jardinería">Jardinería</option>
+                                                            </select>
+                                                        </div>
+                                                        <div className="mb-3">
+                                                            <label className="form-label text-secondary small">Describa el problema / requerimiento</label>
+                                                            <textarea className="form-control glass-input" required rows="4" value={workDesc} onChange={(e) => setWorkDesc(e.target.value)} placeholder="Detalla el trabajo a realizar (mínimo 10 caracteres)"></textarea>
+                                                        </div>
+                                                        <button type="submit" className="btn btn-premium w-100 py-3"><i className="fa-solid fa-paper-plane me-2"></i>Enviar Solicitud</button>
+                                                    </form>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* View 5: Perfil Edit for Maestro */}
+                        {view === "profile" && currentUser && currentUser.tipo === "maestro" && (
+                            <div className="row justify-content-center">
+                                <div className="col-md-8">
+                                    <div className="glass-card p-5">
+                                        <h2 className="brand-text mb-4 font-extrabold"><i className="fa-solid fa-user-gear me-2"></i>Configurar Mi Perfil Profesional</h2>
+                                        <form onSubmit={handleSaveProfile}>
+                                            <div className="mb-3">
+                                                <label className="form-label text-secondary small">Presentación Profesional</label>
+                                                <textarea required rows="4" className="form-control glass-input" value={mDesc} onChange={(e) => setMDesc(e.target.value)} placeholder="Explica tu experiencia, especialidades y forma de trabajar..."></textarea>
+                                            </div>
+                                            <div className="row">
+                                                <div className="col-md-6 mb-3">
+                                                    <label className="form-label text-secondary small">Especialidades (separadas por comas)</label>
+                                                    <input type="text" required className="form-control glass-input" value={mSpecs} onChange={(e) => setMSpecs(e.target.value)} placeholder="ej. gasfiteria, electricidad" />
+                                                </div>
+                                                <div className="col-md-6 mb-3">
+                                                    <label className="form-label text-secondary small">Precio Referencial por Hora ($)</label>
+                                                    <input type="number" step="0.01" required className="form-control glass-input" value={mPrice} onChange={(e) => setMPrice(e.target.value)} placeholder="Ej. 12500" />
+                                                </div>
+                                            </div>
+                                            <div className="mb-4">
+                                                <label className="form-label text-secondary small">Comunas / Ciudades de cobertura</label>
+                                                <input type="text" required className="form-control glass-input" value={mCover} onChange={(e) => setMCover(e.target.value)} placeholder="Ej. Quillota, La Cruz, Calera" />
+                                            </div>
+                                            <button type="submit" className="btn btn-premium py-3 px-5"><i className="fa-solid fa-floppy-disk me-2"></i>Guardar Perfil</button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* View 6: Control Panel (Work order tracks) */}
+                        {view === "panel" && currentUser && (
+                            <div className="row">
+                                <div className="col-12 mb-4 d-flex justify-content-between align-items-center">
+                                    <h2 className="brand-text font-extrabold mb-0"><i className="fa-solid fa-folder-open me-2"></i>Panel de Solicitudes y Trabajos</h2>
+                                    <button className="btn btn-outline-premium btn-sm" onClick={fetchServices}><i className="fa-solid fa-rotate me-1"></i>Actualizar</button>
+                                </div>
+
+                                <div className="col-md-7 mb-4">
+                                    <div className="glass-card p-4">
+                                        <h4 className="mb-4 text-white"><i className="fa-solid fa-list-check me-2"></i>Listado de Solicitudes</h4>
+                                        {services.length === 0 ? (
+                                            <p className="text-secondary mb-0">No se encontraron solicitudes vigentes registradas.</p>
+                                        ) : (
+                                            <div className="table-responsive">
+                                                <table className="table table-dark table-hover align-middle border-0">
+                                                    <thead>
+                                                        <tr className="border-bottom border-secondary text-secondary">
+                                                            <th>ID</th>
+                                                            <th>{currentUser.tipo === "cliente" ? "Maestro" : "Cliente"}</th>
+                                                            <th>Detalle / Categoría</th>
+                                                            <th>Estado</th>
+                                                            <th className="text-center">Acciones</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {services.map(service => (
+                                                            <tr key={service.id} className="border-bottom border-secondary">
+                                                                <td className="text-secondary small font-bold">#{service.id}</td>
+                                                                <td>
+                                                                    <span className="text-white font-semibold">
+                                                                        {currentUser.tipo === "cliente" ? service.maestro.nombre : service.cliente.nombre}
+                                                                    </span>
+                                                                    <div className="small text-secondary" style={{ fontSize: '0.75rem' }}>
+                                                                        {currentUser.tipo === "cliente" ? service.maestro.email : service.cliente.email}
+                                                                    </div>
+                                                                </td>
+                                                                <td>
+                                                                    <span className="badge bg-dark border border-secondary text-secondary mb-1">{service.categoria}</span>
+                                                                    <div className="small text-secondary text-truncate" style={{ maxWidth: '200px' }} title={service.descripcion}>
+                                                                        {service.descripcion}
+                                                                    </div>
+                                                                </td>
+                                                                <td>
+                                                                    <span className={`badge badge-status status-${service.estado}`}>
+                                                                        {service.estado.toUpperCase()}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="text-center">
+                                                                    <div className="d-flex gap-2 justify-content-center">
+                                                                        {/* Maestro actions */}
+                                                                        {currentUser.tipo === "maestro" && service.estado === "pendiente" && (
+                                                                            <button className="btn btn-sm btn-success" onClick={() => handleStatusChange(service.id, "aceptado")}>Aceptar</button>
+                                                                        )}
+                                                                        {currentUser.tipo === "maestro" && service.estado === "aceptado" && (
+                                                                            <button className="btn btn-sm btn-info" onClick={() => handleStatusChange(service.id, "completado")}>Completar</button>
+                                                                        )}
+
+                                                                        {/* Client rating action */}
+                                                                        {currentUser.tipo === "cliente" && service.estado === "completado" && (
+                                                                            <button className="btn btn-sm btn-warning" onClick={() => setActiveServiceReview(service)}><i className="fa-solid fa-star me-1"></i>Calificar</button>
+                                                                        )}
+
+                                                                        {/* Chat interaction trigger */}
+                                                                        {service.estado !== "completado" && (
+                                                                            <button className="btn btn-sm btn-outline-premium" onClick={() => {
+                                                                                setActiveServiceChat(service);
+                                                                                setChatMessages([{ sender: "system", text: `Coordinación iniciada para el trabajo #${service.id}.` }]);
+                                                                            }}><i className="fa-solid fa-comments"></i> Chat</button>
+                                                                        )}
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Sidebar coordination / Review box */}
+                                <div className="col-md-5">
+                                    {/* Chat simulator */}
+                                    {activeServiceChat && (
+                                        <div className="glass-card p-4 mb-4 fade-in">
+                                            <h4 className="text-white mb-3 d-flex justify-content-between align-items-center">
+                                                <span><i className="fa-solid fa-comments me-2 text-info"></i>Chat de Coordinación</span>
+                                                <button className="btn btn-close btn-close-white" style={{ fontSize: '0.75rem' }} onClick={() => setActiveServiceChat(null)}></button>
+                                            </h4>
+                                            <p className="text-secondary small border-bottom border-secondary pb-2">
+                                                Trabajo #{activeServiceChat.id} - con {currentUser.tipo === 'cliente' ? activeServiceChat.maestro.nombre : activeServiceChat.cliente.nombre}
+                                            </p>
+                                            <div className="chat-container d-flex flex-column">
+                                                {chatMessages.map((msg, idx) => (
+                                                    <div className={msg.sender === "system" ? "text-center text-secondary small my-2" : (msg.sender === currentUser.tipo ? "msg-right" : "msg-left")} key={idx}>
+                                                        {msg.sender !== "system" && <strong className="d-block small text-info" style={{ fontSize: '0.65rem' }}>{msg.sender.toUpperCase()}</strong>}
+                                                        {msg.text}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <form className="mt-3 d-flex gap-2" onSubmit={sendChatMessage}>
+                                                <input type="text" className="form-control glass-input" value={chatInput} onChange={(e) => setChatInput(e.target.value)} placeholder="Escribe un mensaje..." />
+                                                <button type="submit" className="btn btn-premium"><i className="fa-solid fa-paper-plane"></i></button>
+                                            </form>
+                                        </div>
+                                    )}
+
+                                    {/* Review Form */}
+                                    {activeServiceReview && (
+                                        <div className="glass-card p-4 border-warning fade-in">
+                                            <h4 className="text-warning mb-3 d-flex justify-content-between align-items-center">
+                                                <span><i className="fa-solid fa-star me-2"></i>Calificar Servicio</span>
+                                                <button className="btn btn-close btn-close-white" style={{ fontSize: '0.75rem' }} onClick={() => setActiveServiceReview(null)}></button>
+                                            </h4>
+                                            <p className="text-secondary small pb-2 border-bottom border-secondary">
+                                                Trabajo #{activeServiceReview.id} - realizado por {activeServiceReview.maestro.nombre}
+                                            </p>
+                                            <form onSubmit={handlePostReview}>
+                                                <div className="mb-3">
+                                                    <label className="form-label text-secondary small">Evaluación (Puntuación)</label>
+                                                    <select className="form-select glass-input" value={reviewScore} onChange={(e) => setReviewScore(e.target.value)}>
+                                                        <option value="5">⭐⭐⭐⭐⭐ (5.0 - Excelente)</option>
+                                                        <option value="4">⭐⭐⭐⭐ (4.0 - Muy bueno)</option>
+                                                        <option value="3">⭐⭐⭐ (3.0 - Regular)</option>
+                                                        <option value="2">⭐⭐ (2.0 - Malo)</option>
+                                                        <option value="1">⭐ (1.0 - Muy malo)</option>
+                                                    </select>
+                                                </div>
+                                                <div className="mb-3">
+                                                    <label className="form-label text-secondary small">Escribe tu reseña / comentario</label>
+                                                    <textarea required className="form-control glass-input" rows="3" value={reviewComment} onChange={(e) => setReviewComment(e.target.value)} placeholder="Cuéntanos detalles de tu experiencia..."></textarea>
+                                                </div>
+                                                <button type="submit" className="btn btn-warning w-100 font-bold py-2"><i className="fa-solid fa-circle-check me-2"></i>Publicar Calificación</button>
+                                            </form>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

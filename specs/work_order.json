@@ -1,0 +1,7 @@
+{
+  "work_order_id": "WO-20260529-002230",
+  "project_id": "PROYECTO_TRES",
+  "project_name": "4S (Four S) — Plataforma Web de Servicios de Oficio",
+  "requirement": "\nDesarrollar una aplicación web responsiva que conecte a clientes con maestros de oficios (jardinería, carpintería, electricidad, gasfitería, pintura, entre otros), permitiendo buscar, calificar, contactar y coordinar trabajos de manera ágil y confiable.\nEl sistema debe incluir:\n- Backend web con API REST (FastAPI) y persistencia local en SQLite (db.sqlite3).\n- Frontend web responsivo con React (UMD) + Bootstrap con diseño Dark Glassmorphism.\n- Registro y gestión de perfiles de maestros y clientes.\n- Buscador con filtros avanzados de maestros (por especialidad, precio referencial, calificación mínima).\n- Registro de solicitudes de servicio con estados (pendiente, aceptado, completado).\n- Sistema de calificaciones y reseñas (1-5 estrellas) con recálculo automático y atómico del promedio del maestro.\n",
+  "started_at": "2026-05-29T00:22:30.223073Z"
+}

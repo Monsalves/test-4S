@@ -1,0 +1,7 @@
+# Checklist de Tareas del Proyecto (4S — Four S)
+
+- [ ] **T-001 (Configuración de Base de Datos y Modelos):** Declarar modelos SQLAlchemy `UsuarioDB`, `PerfilMaestroDB`, `SolicitudServicioDB` y `EvaluacionDB` en `backend/app/main.py`. (Mapea a REQ-001, REQ-003, REQ-004)
+- [ ] **T-002 (Esquemas Pydantic y Validaciones):** Desarrollar esquemas Pydantic para registro de usuarios, creación de perfiles, solicitudes y evaluaciones (con validaciones de rating 1-5). (Mapea a REQ-001, REQ-004)
+- [ ] **T-003 (Endpoints y Controladores API):** Construir rutas de FastAPI para Registro de usuarios, Login simple, Buscador filtrable de maestros, Creación y actualización de solicitudes, y registro de evaluaciones (con recálculo atómico). (Mapea a REQ-001, REQ-002, REQ-003, REQ-004)
+- [ ] **T-004 (Suite de Pruebas Pytest):** Desarrollar pruebas automatizadas en `backend/tests/test_main.py` para verificar registro, filtros de búsqueda, transiciones y atomocidad de calificaciones. (Mapea a AC-001 al AC-004)
+- [ ] **T-005 (Frontend Glassmorphism):** Diseñar una interfaz interactiva de cristal esmerilado (Dark Glassmorphism) en `frontend/index.html` con catálogo de maestros, formulario de solicitud, tableros de control y simulador de chat. (Mapea a REQ-005)

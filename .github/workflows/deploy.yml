@@ -1,0 +1,77 @@
+name: CI/CD Deployment with Docker to AWS EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Pytest backend suite
+        run: |
+          PYTHONPATH=backend pytest backend/tests
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Execute remote SSH commands to deploy
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
+            # Create deployment directory if not exists, and navigate there
+            mkdir -p ~/test-4S
+            cd ~/test-4S
+            
+            # Check if Git repo is initialized, if not clone it, else pull latest changes
+            if [ ! -d ".git" ]; then
+              git clone https://github.com/Monsalves/test-4S.git .
+            else
+              git fetch origin main
+              git reset --hard origin/main
+            fi
+            
+            # Re-generate backend .env using secrets from GitHub Secrets
+            echo "Generating .env file..."
+            echo "PORT=8000" > backend/.env
+            echo "DATABASE_URL=sqlite:///./db.sqlite3" >> backend/.env
+            echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> backend/.env
+            echo "AGENT_TIMEOUT=6.0" >> backend/.env
+            echo "AGENT_MAX_RETRIES=3" >> backend/.env
+            
+            # Deploy using Docker Compose
+            echo "Stopping old containers..."
+            docker-compose down || true
+            
+            echo "Building and launching new containers..."
+            docker-compose build --no-cache
+            docker-compose up -d
+            
+            # Warm up and health check
+            echo "Waiting for app to warm up..."
+            sleep 6
+            echo "Verifying health check endpoint..."
+            curl -f http://localhost:8000/api/health || (echo "Health check failed!" && exit 1)
+            echo "Deployment successful!"
