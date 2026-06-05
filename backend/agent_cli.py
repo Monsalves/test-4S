@@ -3,12 +3,12 @@ import sys
 import os
 import argparse
 import json
-import httpx
+import urllib.request
+import urllib.error
 
 DEFAULT_API_URL = "http://localhost:8000"
 
 def get_base_url():
-    # If PORT is in the env, adjust the default API URL
     port = os.getenv("PORT", "8000")
     return f"http://localhost:{port}"
 
@@ -19,26 +19,31 @@ def cmd_health(args):
     url = f"{args.url}/api/health"
     print(f"[*] Conectando a {url}...")
     try:
-        response = httpx.get(url, timeout=5.0)
-        if response.status_code == 200:
-            data = response.json()
-            status = data.get("status", "unknown").upper()
-            
-            # Print with colors (standard ANSI)
-            color = "\033[92m" if status == "HEALTHY" else "\033[91m"
-            reset = "\033[0m"
-            
-            print("\n=== REPORTE DE SALUD DEL SISTEMA ===")
-            print(f"Estado General:       {color}{status}{reset}")
-            print(f"Base de Datos:        {data.get('database')}")
-            print(f"Dependencia Agéntica: {data.get('agentic_dependency')}")
-            print(f"Timestamp Servidor:   {data.get('timestamp')}")
-            print("====================================\n")
-        else:
-            print(f"[\u2717] Error: El servidor respondió con código {response.status_code}")
-    except Exception as e:
-        print(f"[\u2717] Error de conexión: {str(e)}")
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=5.0) as response:
+            if response.status == 200:
+                data = json.loads(response.read().decode('utf-8'))
+                status = data.get("status", "unknown").upper()
+                
+                # Print with colors (standard ANSI)
+                color = "\033[92m" if status == "HEALTHY" else "\033[91m"
+                reset = "\033[0m"
+                
+                print("\n=== REPORTE DE SALUD DEL SISTEMA ===")
+                print(f"Estado General:       {color}{status}{reset}")
+                print(f"Base de Datos:        {data.get('database')}")
+                print(f"Dependencia Agéntica: {data.get('agentic_dependency')}")
+                print(f"Timestamp Servidor:   {data.get('timestamp')}")
+                print("====================================\n")
+            else:
+                print(f"[\u2717] Error: El servidor respondió con código {response.status}")
+    except urllib.error.HTTPError as e:
+        print(f"[\u2717] Error HTTP {e.code}: {e.read().decode('utf-8')}")
+    except urllib.error.URLError as e:
+        print(f"[\u2717] Error de conexión: {str(e.reason)}")
         print("Asegúrese de que el servidor FastAPI esté corriendo y el puerto sea accesible.")
+    except Exception as e:
+        print(f"[\u2717] Error inesperado: {str(e)}")
 
 def cmd_test(args):
     """
@@ -49,32 +54,43 @@ def cmd_test(args):
     
     payload = {"consulta": args.query}
     try:
-        response = httpx.post(url, json=payload, timeout=15.0)
-        if response.status_code == 200:
-            res = response.json()
-            print("\n=== RESPUESTA DEL ASISTENTE AGÉNTICO ===")
-            print(f"Categoría Detectada: {res.get('categoria_detectada')}")
-            print(f"Origen de Decisión:  {res.get('source')}")
-            print(f"Diagnóstico Inicial:\n  {res.get('diagnostico')}\n")
-            
-            maestros = res.get("maestros_recomendados", [])
-            print("Maestros Recomendados:")
-            if not maestros:
-                print("  No se encontraron maestros disponibles en esta especialidad/ciudad.")
+        data_bytes = json.dumps(payload).encode('utf-8')
+        req = urllib.request.Request(
+            url, 
+            data=data_bytes, 
+            headers={'Content-Type': 'application/json'},
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=15.0) as response:
+            if response.status == 200:
+                res = json.loads(response.read().decode('utf-8'))
+                print("\n=== RESPUESTA DEL ASISTENTE AGÉNTICO ===")
+                print(f"Categoría Detectada: {res.get('categoria_detectada')}")
+                print(f"Origen de Decisión:  {res.get('source')}")
+                print(f"Diagnóstico Inicial:\n  {res.get('diagnostico')}\n")
+                
+                maestros = res.get("maestros_recomendados", [])
+                print("Maestros Recomendados:")
+                if not maestros:
+                    print("  No se encontraron maestros disponibles en esta especialidad/ciudad.")
+                else:
+                    # Format a text table
+                    header = f"  {'ID':<4} | {'Nombre':<25} | {'Precio/Hora':<12} | {'Rating':<6} | {'Ciudad':<15}"
+                    print(header)
+                    print("  " + "-" * len(header))
+                    for m in maestros:
+                        rating = f"{m.get('rating_promedio'):.2f}"
+                        precio = f"${m.get('precio_hora'):.2f}"
+                        print(f"  {m.get('id'):<4} | {m.get('nombre'):<25} | {precio:<12} | {rating:<6} | {m.get('ciudad'):<15}")
+                print("========================================\n")
             else:
-                # Format a text table
-                header = f"  {'ID':<4} | {'Nombre':<25} | {'Precio/Hora':<12} | {'Rating':<6} | {'Ciudad':<15}"
-                print(header)
-                print("  " + "-" * len(header))
-                for m in maestros:
-                    rating = f"{m.get('rating_promedio'):.2f}"
-                    precio = f"${m.get('precio_hora'):.2f}"
-                    print(f"  {m.get('id'):<4} | {m.get('nombre'):<25} | {precio:<12} | {rating:<6} | {m.get('ciudad'):<15}")
-            print("========================================\n")
-        else:
-            print(f"[\u2717] Error {response.status_code}: {response.text}")
+                print(f"[\u2717] Error {response.status}")
+    except urllib.error.HTTPError as e:
+         print(f"[\u2717] Error HTTP {e.code}: {e.read().decode('utf-8')}")
+    except urllib.error.URLError as e:
+        print(f"[\u2717] Error de conexión: {str(e.reason)}")
     except Exception as e:
-        print(f"[\u2717] Error de conexión: {str(e)}")
+        print(f"[\u2717] Error: {str(e)}")
 
 def cmd_logs(args):
     """
@@ -92,7 +108,6 @@ def cmd_logs(args):
     try:
         with open(log_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
-            # Get last N lines
             last_lines = lines[-args.lines:]
             for line in last_lines:
                 print(line, end="")
