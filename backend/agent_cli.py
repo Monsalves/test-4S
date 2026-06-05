@@ -196,7 +196,7 @@ def cmd_analyze(args):
         return
         
     print("[*] Enviando diagnóstico al Agente de Mantenimiento de Gemini...")
-    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={api_key}"
     
     prompt = f"""Eres un agente administrador de sistemas experto para la plataforma de servicios 4S. 
 Analiza los siguientes datos de diagnóstico y bitácora de logs obtenidos directamente del servidor EC2.
