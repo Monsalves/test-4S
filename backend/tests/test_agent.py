@@ -19,54 +19,61 @@ def test_health_endpoint():
     assert "agentic_dependency" in data
 
 def test_agent_validation_error():
-    # Empty query or query < 5 chars should return validation error (400 Bad Request)
-    response = client.post("/api/agent/recommend", json={"consulta": "Hola"})
-    assert response.status_code == 400
+    # Empty query or instruction < 5 chars should return validation error (422 Unprocessable Entity)
+    response = client.post("/api/agent/run", json={"instruccion": "Hola"})
+    assert response.status_code == 422
 
-    response = client.post("/api/agent/recommend", json={"consulta": "   "})
-    assert response.status_code == 400
+    response = client.post("/api/agent/run", json={"instruccion": "   "})
+    assert response.status_code == 422
 
-def test_agent_recommendation_fallback_and_db_query():
-    # 1. Register a maestro user with specialty 'gasfitería'
-    reg_response = client.post("/api/users/register", json={
-        "nombre": "Mario Bros",
-        "email": "mario@nintendo.com",
-        "password": "supersecretpassword",
-        "tipo": "maestro",
-        "ciudad": "Quillota"
-    })
-    assert reg_response.status_code == 201
-    maestro_id = reg_response.json()["id"]
-
-    # Update maestro profile with Gasfitería specialty
-    profile_response = client.post("/api/maestros/profile", json={
-        "maestro_id": maestro_id,
-        "descripcion": "Experto plomero con años de experiencia reparando tuberías.",
-        "especialidades": "gasfitería, cañerías",
-        "precio_hora": 15.0,
-        "cobertura": "Quillota"
-    })
-    assert profile_response.status_code == 200
-
-    # 2. Make query containing water/leak keywords to activate fallback
-    # Since GEMINI_API_KEY is empty in test environment, it will use local contingency fallback
-    recommend_response = client.post("/api/agent/recommend", json={
-        "consulta": "Tengo una filtración de agua urgente en la cocina"
-    })
+def test_agent_run_contingency_and_audit():
+    # 1. Run a DevOps instruction. Since GEMINI_API_KEY is empty/unset, it triggers fallback
+    instruction = "limpiar logs del servidor y optimizar base de datos"
+    response = client.post("/api/agent/run", json={"instruccion": instruction})
     
-    assert recommend_response.status_code == 200
-    data = recommend_response.json()
+    assert response.status_code == 200
+    data = response.json()
     
-    # Assertions
-    assert data["categoria_detectada"] == "Gasfitería"
+    # Assertions on response schema
+    assert "audit_id" in data
+    assert "rationale" in data
+    assert "commands" in data
+    assert "file_edits" in data
     assert data["source"] == "contingency_fallback"
-    assert "Se detecta un posible problema de fontanería" in data["diagnostico"]
     
-    # Check recommended maestros list contains Mario Bros
-    maestros = data["maestros_recomendados"]
-    assert len(maestros) >= 1
-    mario_maestro = next((m for m in maestros if m["id"] == maestro_id), None)
-    assert mario_maestro is not None
-    assert mario_maestro["nombre"] == "Mario Bros"
-    assert "gasfitería" in mario_maestro["especialidades"]
-    assert mario_maestro["precio_hora"] == 15.0
+    audit_id = data["audit_id"]
+    
+    # 2. Get historical audit bitacora
+    audit_response = client.get("/api/agent/audit")
+    assert audit_response.status_code == 200
+    audits = audit_response.json()
+    assert len(audits) >= 1
+    
+    current_audit = next((a for a in audits if a["id"] == audit_id), None)
+    assert current_audit is not None
+    assert current_audit["instruccion"] == instruction
+    assert current_audit["estado"] == "pendiente"
+    
+    # 3. Update audit status to approved/completado
+    status_response = client.post(
+        f"/api/agent/audit/{audit_id}/status",
+        json={"estado": "completado", "detalles_ejecucion": '{"status": "success"}'}
+    )
+    assert status_response.status_code == 200
+    assert status_response.json()["estado"] == "completado"
+    
+    # Verify DB update in list
+    audit_response_updated = client.get("/api/agent/audit")
+    updated_audit = next((a for a in audit_response_updated.json() if a["id"] == audit_id), None)
+    assert updated_audit["estado"] == "completado"
+    assert "success" in updated_audit["detalles_ejecucion"]
+
+def test_agent_analyze_endpoint():
+    response = client.post("/api/agent/analyze")
+    assert response.status_code == 200
+    data = response.json()
+    assert "report" in data
+    assert "source" in data
+    # Fallback mode since key is not configured
+    assert data["source"] == "local_fallback"
+    assert "REPORTE DE RECURSOS" in data["report"]

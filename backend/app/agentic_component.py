@@ -37,81 +37,161 @@ AGENT_TIMEOUT = float(os.getenv("AGENT_TIMEOUT", "6.0"))
 AGENT_MAX_RETRIES = int(os.getenv("AGENT_MAX_RETRIES", "3"))
 
 # Define Pydantic models for validation
-class AgentRecommendationRequest(BaseModel):
-    consulta: str = Field(..., min_length=5, max_length=500, description="Consulta del cliente detallando el problema o servicio requerido.")
+class AgentExecutionRequest(BaseModel):
+    instruccion: str = Field(..., min_length=5, max_length=1000, description="Instrucción de administración del sistema en lenguaje natural.")
 
-class RecommendedMaestro(BaseModel):
-    id: int
-    nombre: str
-    email: str
-    especialidades: str
-    precio_hora: float
-    rating_promedio: float
-    ciudad: str
+class ProposedFileEdit(BaseModel):
+    path: str = Field(..., description="Ruta del archivo a modificar relativo a la raíz del backend.")
+    old_text: str = Field(..., description="Contenido de líneas exactas a buscar.")
+    new_text: str = Field(..., description="Contenido nuevo de reemplazo.")
 
-class AgentRecommendationResponse(BaseModel):
-    categoria_detectada: str
-    diagnostico: str
-    maestros_recomendados: List[RecommendedMaestro]
-    source: str
+class ProposedPlan(BaseModel):
+    rationale: str = Field(..., description="Explicación técnica del plan de acción propuesto.")
+    commands: List[str] = Field(default=[], description="Lista de comandos shell recomendados a ejecutar.")
+    file_edits: List[ProposedFileEdit] = Field(default=[], description="Lista de ediciones de archivos propuestas.")
 
-# Local contingency heuristic fallback
-def run_heuristic_contingency(consulta: str) -> Dict[str, str]:
+def collect_system_telemetry(db: Session) -> Dict[str, Any]:
     """
-    Analyzes the text query and returns a category and diagnostic based on simple rules.
-    This serves as our local fallback when the LLM is unavailable or lacks API keys.
+    Recopila métricas del servidor en caliente (disco, memoria, estado DB y logs recientes)
+    para alimentar el contexto del agente.
     """
-    consulta_lower = consulta.lower()
-    
-    # Keyword to category mapping
-    categories = {
-        "Gasfitería": ["agua", "llave", "filtración", "filtracion", "cañeria", "cañería", "tubo", "gotera", "wc", "baño", "lavaplatos", "sifón", "sifon"],
-        "Carpintería": ["madera", "mueble", "puerta", "ventana", "cajón", "cajon", "silla", "mesa", "techo", "piso", "carpintero"],
-        "Electricidad": ["luz", "cable", "enchufe", "corto", "electricista", "corriente", "interruptor", "automático", "automatico", "tensión", "tension"],
-        "Pintura": ["pintar", "pintura", "pared", "casa", "brocha", "rodillo", "fachada", "óleo", "oleo", "látex", "latex"],
+    import shutil
+    # 1. Uso de disco
+    total, used, free = shutil.disk_usage("/")
+    disk_info = {
+        "total_gb": round(total / (1024**3), 2),
+        "used_gb": round(used / (1024**3), 2),
+        "free_gb": round(free / (1024**3), 2),
     }
-    
-    detected_category = "Gasfitería"  # Default fallback
-    for category, keywords in categories.items():
-        if any(keyword in consulta_lower for keyword in keywords):
-            detected_category = category
-            break
-            
-    diagnostics = {
-        "Gasfitería": "Se detecta un posible problema de fontanería/gasfitería. Se recomienda revisar la llave de paso principal para evitar filtraciones mayores antes de la llegada del especialista.",
-        "Carpintería": "Se identifica una solicitud relacionada con trabajos de madera o estructuras. Se aconseja despejar el área de trabajo y tener las medidas aproximadas a mano.",
-        "Electricidad": "¡Atención! Posible falla eléctrica detectada. Por seguridad, corte el suministro eléctrico en el tablero general si hay cables expuestos o riesgo de cortocircuito.",
-        "Pintura": "Solicitud de pintura o recubrimiento detectada. Se sugiere limpiar la superficie a tratar antes de comenzar el trabajo para asegurar la adherencia."
-    }
-    
+
+    # 2. Uso de memoria
+    mem_info = {"total_kb": 0, "free_kb": 0, "available_kb": 0}
+    if os.path.exists("/proc/meminfo"):
+        try:
+            with open("/proc/meminfo", "r", encoding="utf-8") as f:
+                for line in f:
+                    if "MemTotal" in line:
+                        mem_info["total_kb"] = int(line.split()[1])
+                    elif "MemFree" in line:
+                        mem_info["free_kb"] = int(line.split()[1])
+                    elif "MemAvailable" in line:
+                        mem_info["available_kb"] = int(line.split()[1])
+        except Exception:
+            pass
+
+    # 3. Estado de Base de Datos
+    db_ok = False
+    try:
+        from sqlalchemy import text
+        db.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception:
+        pass
+
+    # 4. Logs recientes
+    log_file_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs", "agentic.log")
+    recent_logs = []
+    if os.path.exists(log_file_path):
+        try:
+            with open(log_file_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+                recent_logs = [l.strip() for l in lines[-15:]]
+        except Exception:
+            pass
+
+    # 5. Estructura de archivos del backend
+    proj_files = []
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for root, dirs, files in os.walk(base_dir):
+        if "__pycache__" in root or ".git" in root or ".venv" in root or "logs" in root:
+            continue
+        for file in files:
+            rel_path = os.path.relpath(os.path.join(root, file), base_dir)
+            proj_files.append(rel_path)
+
     return {
-        "categoria": detected_category,
-        "diagnostico": diagnostics.get(detected_category, "Solicitud recibida. Analizando requerimiento para asignación óptima del especialista.")
+        "disk": disk_info,
+        "memory": mem_info,
+        "database_connected": db_ok,
+        "recent_logs": recent_logs,
+        "project_files": proj_files[:40]
     }
 
-async def fetch_gemini_analysis(consulta: str) -> Dict[str, str]:
+def run_heuristic_contingency(instruction: str, telemetry: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Calls Google Gemini API using raw HTTP calls to avoid complex SDK dependencies,
-    with custom timeout and exponential retries.
+    Plan de contingencia local que analiza heurísticamente la instrucción
+    para sugerir comandos seguros en caso de fallo de la API de Gemini.
+    """
+    inst_lower = instruction.lower()
+    commands = []
+    rationale = "Modo de contingencia local activado (Heurística). "
+    
+    if "clean" in inst_lower or "limpiar" in inst_lower or "logs" in inst_lower:
+        commands.append("echo '' > backend/logs/agentic.log")
+        rationale += "Se sugiere la limpieza del archivo de logs del agente para liberar espacio."
+    elif "restart" in inst_lower or "reiniciar" in inst_lower:
+        commands.append("docker-compose restart")
+        rationale += "Se sugiere el comando para reiniciar los contenedores de la aplicación."
+    elif "health" in inst_lower or "status" in inst_lower or "estado" in inst_lower:
+        rationale += f"Telemetría local actual: Disco Libre={telemetry['disk']['free_gb']} GB, Memoria Libre={telemetry['memory']['free_kb']} KB."
+    else:
+        rationale += f"La instrucción '{instruction}' es compleja y no se puede resolver en modo de contingencia local."
+
+    return {
+        "rationale": rationale,
+        "commands": commands,
+        "file_edits": []
+    }
+
+async def fetch_gemini_ops_plan(instruction: str, telemetry: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Envía la instrucción y telemetría a Gemini-2.5-Flash para estructurar el plan operativo.
     """
     if not GEMINI_API_KEY:
         raise ValueError("Clave GEMINI_API_KEY no configurada.")
         
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://genergenerativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+    # Wait, let's fix URL prefix: it is generativelanguage, not genergenerativelanguage
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
     
     prompt = f"""
-    Eres un asistente agéntico inteligente para la plataforma de servicios de oficios '4S'.
-    Analiza la siguiente solicitud de un cliente y clasifícala en una de estas categorías: 'Gasfitería', 'Carpintería', 'Electricidad', 'Pintura', 'Otros'.
-    Además, proporciona un diagnóstico inicial breve y preventivo para el cliente.
+    Eres un agente inteligente experto en operaciones y mantenimiento de sistemas (DevOps y Administrador de Sistemas Linux) para la plataforma de servicios '4S'.
+    Se te ha encomendado ejecutar una instrucción del administrador del sistema.
     
-    Debes responder ÚNICAMENTE con un objeto JSON válido, con la siguiente estructura:
+    Tu tarea es analizar el estado actual del servidor (telemetría), los archivos del proyecto y la instrucción del usuario, y proponer un plan de acción atómico y seguro.
+    
+    --- TELEMETRÍA DEL SERVIDOR ---
+    {json.dumps(telemetry, indent=2)}
+    
+    --- INSTRUCCIÓN DEL USUARIO ---
+    "{instruction}"
+    
+    Debes responder ÚNICAMENTE con un objeto JSON válido que cumpla con la estructura descrita abajo. No incluyas comentarios en el JSON, ni bloques de código markdown externos.
+    
+    Estructura del JSON:
     {{
-      "categoria": "Categoría detectada",
-      "diagnostico": "Breve diagnóstico inicial descriptivo y preventivo de no más de dos líneas."
+      "rationale": "Explicación técnica clara en español sobre lo que vas a hacer y por qué.",
+      "commands": [
+        "lista",
+        "de",
+        "comandos",
+        "shell",
+        "a",
+        "ejecutar"
+      ],
+      "file_edits": [
+        {{
+          "path": "ruta relativa del archivo desde la raíz del backend (ej. app/main.py o agent_cli.py)",
+          "old_text": "CANTIDAD DE LÍNEAS COMPLETAS EXACTAS A BUSCAR (deben coincidir textualmente con el archivo original, incluyendo sangrías/espacios)",
+          "new_text": "NUEVO CONTENIDO que reemplazará a old_text exactamente"
+        }}
+      ]
     }}
     
-    Solicitud del cliente: "{consulta}"
-    JSON:
+    Notas de seguridad críticas:
+    1. Si la instrucción del usuario pide algo destructivo o peligroso sin justificación, rehúsate proponiendo una explicación en 'rationale' y listas vacías en 'commands' y 'file_edits'.
+    2. Si los cambios sugeridos implican modificar código, asegúrate de que el texto en 'old_text' coincida de forma textual con las líneas exactas existentes en el archivo.
+    3. No ejecutes comandos interactivos que se queden esperando entrada del usuario (ej: sin el flag -y).
     """
     
     payload = {
@@ -124,10 +204,9 @@ async def fetch_gemini_analysis(consulta: str) -> Dict[str, str]:
     
     headers = {"Content-Type": "application/json"}
     
-    # Retry loop with exponential backoff
     for attempt in range(1, AGENT_MAX_RETRIES + 1):
         try:
-            logger.info(f"Intento {attempt} de llamada a Gemini API...")
+            logger.info(f"Intento {attempt} de llamada a Gemini API para plan operativo...")
             async with httpx.AsyncClient() as client:
                 response = await asyncio.wait_for(
                     client.post(url, json=payload, headers=headers),
@@ -138,7 +217,6 @@ async def fetch_gemini_analysis(consulta: str) -> Dict[str, str]:
                 result_json = response.json()
                 text_response = result_json["candidates"][0]["content"]["parts"][0]["text"].strip()
                 
-                # Strip potential markdown code block backticks if returned by the LLM
                 if text_response.startswith("```json"):
                     text_response = text_response[7:]
                 if text_response.endswith("```"):
@@ -146,98 +224,126 @@ async def fetch_gemini_analysis(consulta: str) -> Dict[str, str]:
                 text_response = text_response.strip()
                 
                 parsed_res = json.loads(text_response)
-                # Quick validation
-                if "categoria" in parsed_res and "diagnostico" in parsed_res:
+                # Schema validation
+                if "rationale" in parsed_res:
                     return parsed_res
                 else:
                     raise ValueError("JSON de respuesta incompleto")
                     
             elif response.status_code in [429, 500, 503]:
-                logger.warning(f"Error {response.status_code} de la API. Reintentando...")
+                logger.warning(f"Error temporal {response.status_code} de la API. Reintentando...")
             else:
                 logger.error(f"Error fatal de API: {response.status_code} - {response.text}")
                 raise ValueError(f"HTTP Error {response.status_code}")
                 
         except asyncio.TimeoutError:
-            logger.warning(f"Timeout (límite: {AGENT_TIMEOUT}s) alcanzado en el intento {attempt}.")
+            logger.warning(f"Timeout alcanzado en el intento {attempt}.")
         except Exception as e:
             logger.warning(f"Error en intento {attempt}: {str(e)}")
             
-        # Exponential backoff delay (1s, 2s, 4s...)
         if attempt < AGENT_MAX_RETRIES:
             delay = 2 ** (attempt - 1)
             await asyncio.sleep(delay)
             
     raise RuntimeError("Se agotaron todos los intentos de conexión a Gemini API.")
 
-def get_recommended_maestros(categoria: str, db: Session) -> List[RecommendedMaestro]:
+async def get_agent_execution_plan(instruction: str, db: Session) -> Dict[str, Any]:
     """
-    Queries SQLite database for active maestros matching the given category.
+    Punto de entrada principal para generar el plan operativo.
+    Recopila telemetría, llama a Gemini, y maneja contingencias (fallbacks).
     """
-    # Fetch profiles
-    profiles = db.query(PerfilMaestroDB).all()
-    recommended = []
+    logger.info(f"Iniciando planificación operativa para instrucción: '{instruction}'")
+    telemetry = collect_system_telemetry(db)
     
-    for profile in profiles:
-        # Check if category is within specialties (case insensitive search)
-        specialties = [s.strip().lower() for s in profile.especialidades.split(",")]
-        if categoria.lower() in specialties or any(categoria.lower() in spec for spec in specialties):
-            # Fetch user details
-            maestro_user = db.query(UsuarioDB).filter(UsuarioDB.id == profile.maestro_id, UsuarioDB.tipo == "maestro").first()
-            if maestro_user and maestro_user.estado == "activo":
-                recommended.append(RecommendedMaestro(
-                    id=maestro_user.id,
-                    nombre=maestro_user.nombre,
-                    email=maestro_user.email,
-                    especialidades=profile.especialidades,
-                    precio_hora=profile.precio_hora,
-                    rating_promedio=profile.rating_promedio,
-                    ciudad=maestro_user.ciudad
-                ))
-                
-    # Sort recommendations by rating (highest first)
-    recommended.sort(key=lambda x: x.rating_promedio, reverse=True)
-    return recommended
-
-async def get_agent_recommendation(consulta: str, db: Session) -> AgentRecommendationResponse:
-    """
-    Main entry point for agent recommendation. Implements input validation,
-    observability logs, LLM parsing, and local contingency fallback.
-    """
-    # 1. Input Validation
     try:
-        validated_input = AgentRecommendationRequest(consulta=consulta)
-        clean_query = validated_input.consulta
-    except ValidationError as ve:
-        logger.error(f"Error de validación de entrada: {ve.errors()}")
-        raise ve
-        
-    logger.info(f"Iniciando recomendación agéntica para consulta: '{clean_query}'")
-    start_time = asyncio.get_event_loop().time()
-    
-    # 2. Try LLM matching
-    try:
-        analysis = await fetch_gemini_analysis(clean_query)
-        detected_category = analysis["categoria"]
-        diagnostico = analysis["diagnostico"]
+        plan = await fetch_gemini_ops_plan(instruction, telemetry)
         source = "gemini_agent"
-        logger.info(f"Recomendación agéntica resuelta con Gemini. Categoría: '{detected_category}'")
     except Exception as e:
-        logger.warning(f"Error al llamar a la API agéntica ({str(e)}). Activando plan de contingencia (fallback local).")
-        # 3. Fallback to Local Heuristic
-        fallback_res = run_heuristic_contingency(clean_query)
-        detected_category = fallback_res["categoria"]
-        diagnostico = fallback_res["diagnostico"]
+        logger.warning(f"Fallo en agente de Gemini ({str(e)}). Activando contingencia local.")
+        plan = run_heuristic_contingency(instruction, telemetry)
         source = "contingency_fallback"
         
-    # 4. Search matches in local Database
-    maestros = get_recommended_maestros(detected_category, db)
-    elapsed_time = asyncio.get_event_loop().time() - start_time
-    logger.info(f"Búsqueda finalizada en {elapsed_time:.3f}s. Encontrados {len(maestros)} maestros para '{detected_category}' ({source}).")
+    plan["source"] = source
+    logger.info(f"Plan generado exitosamente vía '{source}'. Rationale: '{plan.get('rationale')}'")
+    return plan
+
+async def get_agent_monitoring_report(db: Session) -> Dict[str, str]:
+    """
+    Generates a system maintenance/monitoring report using telemetry and Gemini.
+    """
+    telemetry = collect_system_telemetry(db)
     
-    return AgentRecommendationResponse(
-        categoria_detectada=detected_category,
-        diagnostico=diagnostico,
-        maestros_recomendados=maestros,
-        source=source
-    )
+    # Format a diagnostic report string similar to the old CLI format
+    diagnostic_report = f"""====== REPORTE DE RECURSOS ======
+Disco: Total={telemetry['disk'].get('total_gb', 0)} GB, Usado={telemetry['disk'].get('used_gb', 0)} GB, Libre={telemetry['disk'].get('free_gb', 0)} GB
+Memoria: MemTotal={telemetry['memory'].get('total_kb', 0)} kB, MemFree={telemetry['memory'].get('free_kb', 0)} kB
+Servidor API: Conectado (Salud=healthy, Base de Datos={'ok' if telemetry['database_connected'] else 'failed'})
+=================================
+
+====== BITÁCORA DE LOGS =======
+{chr(10).join(telemetry['recent_logs']) if telemetry['recent_logs'] else 'Logs: No se encontraron logs generados.'}
+===============================
+"""
+    
+    if not GEMINI_API_KEY:
+        return {
+            "report": f"Advertencia: No se encontró la variable GEMINI_API_KEY.\n\nReporte local básico:\n{diagnostic_report}",
+            "source": "local_fallback"
+        }
+        
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+    
+    prompt = f"""Eres un agente administrador de sistemas experto para la plataforma de servicios 4S operando en un entorno EC2 con Docker Compose.
+Analiza con cautela los siguientes datos de telemetría de hardware, estado del backend y logs recopilados del servidor.
+
+Tu reporte debe incluir de forma estructurada:
+1. **ESTADO GENERAL DEL SISTEMA**: (OK, ADVERTENCIA o CRÍTICO) con una justificación clara basada en los datos.
+2. **ANÁLISIS DE RECURSOS**: Evaluación detallada del uso de disco y memoria. Comenta si hay riesgo de agotamiento de recursos.
+3. **SALUD DE LA APLICACIÓN Y DB**: Validación del estado de la API y conectividad SQLite.
+4. **AUDITORÍA DE BITÁCORA (LOGS)**: Detección de errores, advertencias o activaciones del modo de contingencia local (fallback).
+5. **ACCIONES DE MANTENIMIENTO RECOMENDADAS**: Comandos de Linux o Docker Compose recomendados para mitigar problemas detectados (ej. limpieza de logs, reiniciar contenedores, depurar espacio de disco).
+
+Datos en tiempo real del Servidor:
+{diagnostic_report}
+"""
+
+    payload = {
+        "contents": [{
+            "parts": [{"text": prompt}]
+        }]
+    }
+    
+    headers = {"Content-Type": "application/json"}
+    
+    for attempt in range(1, AGENT_MAX_RETRIES + 1):
+        try:
+            logger.info(f"Intento {attempt} de llamada a Gemini API para reporte de monitoreo...")
+            async with httpx.AsyncClient() as client:
+                response = await asyncio.wait_for(
+                    client.post(url, json=payload, headers=headers),
+                    timeout=AGENT_TIMEOUT
+                )
+                
+            if response.status_code == 200:
+                result_json = response.json()
+                report_text = result_json["candidates"][0]["content"]["parts"][0]["text"].strip()
+                return {
+                    "report": report_text,
+                    "source": "gemini_agent"
+                }
+            elif response.status_code in [429, 500, 503]:
+                logger.warning(f"Error temporal {response.status_code} de la API. Reintentando...")
+            else:
+                logger.error(f"Error fatal de la API: {response.status_code}")
+                break
+        except Exception as e:
+            logger.warning(f"Error en intento {attempt}: {str(e)}")
+            
+        if attempt < AGENT_MAX_RETRIES:
+            await asyncio.sleep(2 ** (attempt - 1))
+            
+    # Fallback to local report if Gemini is down
+    return {
+        "report": f"Error consultando al Agente de Gemini. Mostrando reporte local básico:\n\n{diagnostic_report}",
+        "source": "local_fallback"
+    }

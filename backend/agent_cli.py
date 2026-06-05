@@ -6,6 +6,7 @@ import json
 import shutil
 import urllib.request
 import urllib.error
+import subprocess
 
 DEFAULT_API_URL = "http://localhost:8000"
 
@@ -65,45 +66,196 @@ def cmd_health(args):
         print(f"[\u2717] Error de conexión: {str(e.reason)}")
         print("Asegúrese de que el servidor FastAPI esté corriendo y el puerto sea accesible.")
 
-def cmd_test(args):
+def cmd_run(args):
     """
-    Sends a query to the agent recommendation engine and formats the response.
+    Sends an operational instruction to the agent, prints the proposed plan,
+    and runs it locally after user confirmation.
     """
-    url = f"{args.url}/api/agent/recommend"
-    print(f"[*] Solicitando recomendación para: '{args.query}'")
+    url = f"{args.url}/api/agent/run"
+    print(f"[*] Enviando instrucción al Agente: '{args.instruction}'")
     
-    payload = {"consulta": args.query}
+    payload = {"instruccion": args.instruction}
     try:
         data_bytes = json.dumps(payload).encode('utf-8')
         req = urllib.request.Request(
-            url, 
-            data=data_bytes, 
+            url,
+            data=data_bytes,
             headers={'Content-Type': 'application/json'},
             method="POST"
         )
-        with urllib.request.urlopen(req, timeout=15.0) as response:
+        with urllib.request.urlopen(req, timeout=25.0) as response:
             if response.status == 200:
                 res = json.loads(response.read().decode('utf-8'))
-                print("\n=== RESPUESTA DEL ASISTENTE AGÉNTICO ===")
-                print(f"Categoría Detectada: {res.get('categoria_detectada')}")
-                print(f"Origen de Decisión:  {res.get('source')}")
-                print(f"Diagnóstico Inicial:\n  {res.get('diagnostico')}\n")
+                audit_id = res.get("audit_id")
+                rationale = res.get("rationale")
+                commands = res.get("commands", [])
+                file_edits = res.get("file_edits", [])
                 
-                maestros = res.get("maestros_recomendados", [])
-                print("Maestros Recomendados:")
-                if not maestros:
-                    print("  No se encontraron maestros disponibles en esta especialidad/ciudad.")
+                print("\n=== PROPUESTA DEL AGENTE DE OPERACIONES ===")
+                print(f"ID Auditoría:  {audit_id}")
+                print(f"Justificación: {rationale}")
+                
+                if commands:
+                    print("\nComandos Shell Sugeridos:")
+                    for cmd in commands:
+                        print(f"  > {cmd}")
                 else:
-                    header = f"  {'ID':<4} | {'Nombre':<25} | {'Precio/Hora':<12} | {'Rating':<6} | {'Ciudad':<15}"
+                    print("\nComandos Shell: Ninguno")
+                    
+                if file_edits:
+                    print("\nModificaciones de Archivos Sugeridas:")
+                    for idx, edit in enumerate(file_edits):
+                        print(f"  [{idx + 1}] Archivo: {edit.get('path')}")
+                        print("  --- TEXTO A REEMPLAZAR ---")
+                        print(edit.get('old_text'))
+                        print("  --- TEXTO NUEVO ---")
+                        print(edit.get('new_text'))
+                        print("  --------------------------")
+                else:
+                    print("\nModificaciones de Archivos: Ninguna")
+                print("===========================================\n")
+                
+                if not commands and not file_edits:
+                    print("[*] El agente no propuso ninguna acción. Operación finalizada.")
+                    update_audit_status(args.url, audit_id, "completado", "El agente no sugirió comandos ni ediciones.")
+                    return
+                    
+                confirm = input("¿Desea aplicar estos cambios y ejecutar los comandos? (s/n): ").strip().lower()
+                if confirm == 's':
+                    print("[*] Ejecutando plan del agente...")
+                    update_audit_status(args.url, audit_id, "aprobado", None)
+                    
+                    execution_details = {
+                        "commands_executed": [],
+                        "file_edits_applied": []
+                    }
+                    
+                    # 1. Apply file edits
+                    edit_errors = False
+                    for edit in file_edits:
+                        path = edit.get("path")
+                        old = edit.get("old_text")
+                        new = edit.get("new_text")
+                        edit_res = apply_file_edit(path, old, new)
+                        print(f"[*] {edit_res}")
+                        execution_details["file_edits_applied"].append({
+                            "path": path,
+                            "result": edit_res
+                        })
+                        if "Error" in edit_res:
+                            edit_errors = True
+                            
+                    # 2. Run shell commands
+                    cmd_errors = False
+                    for cmd in commands:
+                        print(f"[*] Ejecutando: {cmd}")
+                        try:
+                            run_res = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30.0)
+                            stdout_str = run_res.stdout
+                            stderr_str = run_res.stderr
+                            code = run_res.returncode
+                            print(f"  [Código {code}]")
+                            if stdout_str:
+                                print(f"  stdout: {stdout_str.strip()}")
+                            if stderr_str:
+                                print(f"  stderr: {stderr_str.strip()}")
+                            execution_details["commands_executed"].append({
+                                "command": cmd,
+                                "returncode": code,
+                                "stdout": stdout_str,
+                                "stderr": stderr_str
+                            })
+                            if code != 0:
+                                cmd_errors = True
+                        except Exception as e:
+                            print(f"[\u2717] Error ejecutando comando: {str(e)}")
+                            execution_details["commands_executed"].append({
+                                "command": cmd,
+                                "error": str(e)
+                            })
+                            cmd_errors = True
+                            
+                    final_state = "fallido" if (edit_errors or cmd_errors) else "completado"
+                    update_audit_status(args.url, audit_id, final_state, json.dumps(execution_details))
+                    print(f"\n[*] Operación finalizada con estado: {final_state.upper()}")
+                else:
+                    print("[*] Operación rechazada por el usuario.")
+                    update_audit_status(args.url, audit_id, "rechazado", None)
+            else:
+                print(f"[\u2717] Error: El servidor respondió con código {response.status}")
+    except urllib.error.HTTPError as e:
+        print(f"[\u2717] Error HTTP {e.code}: {e.read().decode('utf-8')}")
+    except urllib.error.URLError as e:
+        print(f"[\u2717] Error de conexión al backend: {str(e.reason)}")
+
+def update_audit_status(base_url, audit_id, status, details):
+    url = f"{base_url}/api/agent/audit/{audit_id}/status"
+    payload = {"estado": status, "detalles_ejecucion": details}
+    try:
+        data_bytes = json.dumps(payload).encode('utf-8')
+        req = urllib.request.Request(
+            url,
+            data=data_bytes,
+            headers={'Content-Type': 'application/json'},
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=5.0) as response:
+            return response.status == 200
+    except Exception as e:
+        print(f"[\u26A0] No se pudo actualizar el estado de auditoría en el backend: {str(e)}")
+        return False
+
+def apply_file_edit(rel_path, old_text, new_text):
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+    # Try resolving path directly, inside app/ or project root
+    abs_path = os.path.abspath(os.path.join(backend_dir, rel_path))
+    if not os.path.exists(abs_path):
+        abs_path = os.path.abspath(os.path.join(backend_dir, "app", rel_path))
+        if not os.path.exists(abs_path):
+            abs_path = os.path.abspath(os.path.join(os.path.dirname(backend_dir), rel_path))
+            if not os.path.exists(abs_path):
+                return f"Error: Archivo no encontrado en '{rel_path}'"
+    try:
+        with open(abs_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        if old_text not in content:
+            return f"Error: Texto original a reemplazar no encontrado en {rel_path}."
+        new_content = content.replace(old_text, new_text, 1)
+        with open(abs_path, "w", encoding="utf-8") as f:
+            f.write(new_content)
+        return f"Éxito: Archivo {rel_path} modificado."
+    except Exception as e:
+        return f"Error escribiendo {rel_path}: {str(e)}"
+
+def cmd_audit(args):
+    """
+    Retrieves and displays the history of agent operations from the database.
+    """
+    url = f"{args.url}/api/agent/audit"
+    print("[*] Solicitando bitácora de auditoría histórica...")
+    try:
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=10.0) as response:
+            if response.status == 200:
+                audits = json.loads(response.read().decode('utf-8'))
+                print("\n=== BITÁCORA DE AUDITORÍA HISTÓRICA DEL AGENTE ===")
+                if not audits:
+                    print("  No hay registros de auditoría aún.")
+                else:
+                    header = f"  {'ID':<4} | {'Fecha/Hora (UTC)':<20} | {'Estado':<11} | {'Instrucción':<40}"
                     print(header)
                     print("  " + "-" * len(header))
-                    for m in maestros:
-                        rating = f"{m.get('rating_promedio'):.2f}"
-                        precio = f"${m.get('precio_hora'):.2f}"
-                        print(f"  {m.get('id'):<4} | {m.get('nombre'):<25} | {precio:<12} | {rating:<6} | {m.get('ciudad'):<15}")
-                print("========================================\n")
+                    for a in audits:
+                        created = a.get("creado_at", "")[:19].replace("T", " ")
+                        inst = a.get("instruccion", "")
+                        if len(inst) > 40:
+                            inst = inst[:37] + "..."
+                        print(f"  {a.get('id'):<4} | {created:<20} | {a.get('estado').upper():<11} | {inst:<40}")
+                print("===================================================\n")
+            else:
+                print(f"[\u2717] Error: El servidor respondió con código {response.status}")
     except urllib.error.HTTPError as e:
-         print(f"[\u2717] Error HTTP {e.code}: {e.read().decode('utf-8')}")
+        print(f"[\u2717] Error HTTP {e.code}: {e.read().decode('utf-8')}")
     except urllib.error.URLError as e:
         print(f"[\u2717] Error de conexión: {str(e.reason)}")
 
@@ -130,111 +282,27 @@ def cmd_logs(args):
 
 def cmd_analyze(args):
     """
-    Uses Gemini LLM Agent to analyze host resources, DB status, and logs, returning a maintenance report.
+    Sends a request to the backend `/api/agent/analyze` endpoint to run
+    AI-powered diagnostics using telemetry and Gemini.
     """
-    print("[*] Recopilando datos de diagnóstico del servidor...")
-    
-    # 1. Gather Disk Stats
-    total, used, free = shutil.disk_usage("/")
-    disk_info = f"Disco: Total={total/(1024**3):.1f} GB, Usado={used/(1024**3):.1f} GB, Libre={free/(1024**3):.1f} GB"
-    
-    # 2. Gather Memory Stats (Linux-specific read)
-    mem_info = "Memoria: Información no disponible en este S.O."
-    if os.path.exists("/proc/meminfo"):
-        try:
-            with open("/proc/meminfo", "r", encoding="utf-8") as f:
-                lines = f.readlines()
-                total_m = [x for x in lines if "MemTotal" in x]
-                free_m = [x for x in lines if "MemFree" in x]
-                if total_m and free_m:
-                    mem_info = f"Memoria: {total_m[0].strip()} | {free_m[0].strip()}"
-        except Exception:
-            pass
-            
-    # 3. Gather Application Health status
-    api_url = f"{args.url}/api/health"
-    app_health = "Servidor API: Desconectado o no responde"
+    print("[*] Solicitando análisis de diagnóstico al backend...")
+    url = f"{args.url}/api/agent/analyze"
     try:
-        req = urllib.request.Request(api_url, method="GET")
-        with urllib.request.urlopen(req, timeout=3.0) as response:
-            if response.status == 200:
-                data = json.loads(response.read().decode('utf-8'))
-                app_health = f"Servidor API: Conectado (Salud={data.get('status')}, Base de Datos={data.get('database')})"
-    except Exception:
-        pass
-        
-    # 4. Gather log excerpts
-    log_path = os.path.join(os.path.dirname(__file__), "logs", "agentic.log")
-    log_content = "Logs: No se encontraron logs generados."
-    if os.path.exists(log_path):
-        try:
-            with open(log_path, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-                log_content = "Últimas líneas de logs:\n" + "".join(lines[-15:])
-        except Exception as e:
-            log_content = f"Error leyendo logs: {str(e)}"
-
-    # Format full diagnostic payload for the LLM
-    diagnostic_report = f"""
-====== REPORTE DE RECURSOS ======
-{disk_info}
-{mem_info}
-{app_health}
-=================================
-
-====== BITÁCORA DE LOGS =======
-{log_content}
-===============================
-"""
-    
-    # Check if Gemini API key is available
-    api_key = load_env_key()
-    if not api_key:
-        print("[\u26A0] Advertencia: No se encontró la variable GEMINI_API_KEY.")
-        print("Mostrando solo el reporte local básico:")
-        print(diagnostic_report)
-        return
-        
-    print("[*] Enviando diagnóstico al Agente de Mantenimiento de Gemini...")
-    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={api_key}"
-    
-    prompt = f"""Eres un agente administrador de sistemas experto para la plataforma de servicios 4S. 
-Analiza los siguientes datos de diagnóstico y bitácora de logs obtenidos directamente del servidor EC2.
-Genera un reporte ejecutivo breve que evalúe la salud del sistema y recomiende acciones de mantenimiento si detectas problemas, cuotas llenas o errores recurrentes.
-
-Datos del Servidor:
-{diagnostic_report}
-"""
-    
-    payload = {
-        "contents": [{
-            "parts": [{"text": prompt}]
-        }]
-    }
-    
-    try:
-        data_bytes = json.dumps(payload).encode('utf-8')
-        req = urllib.request.Request(
-            gemini_url,
-            data=data_bytes,
-            headers={'Content-Type': 'application/json'},
-            method="POST"
-        )
-        with urllib.request.urlopen(req, timeout=20.0) as response:
+        req = urllib.request.Request(url, method="POST")
+        with urllib.request.urlopen(req, timeout=30.0) as response:
             if response.status == 200:
                 res = json.loads(response.read().decode('utf-8'))
-                report_text = res['candidates'][0]['content']['parts'][0]['text']
+                report_text = res.get("report", "")
+                source = res.get("source", "gemini_agent")
                 print("\n=======================================================")
-                print(" REPORTE AGÉNTICO DE MANTENIMIENTO INTELIGENTE (GEMINI) ")
+                print(f" REPORTE AGÉNTICO DE MANTENIMIENTO ({source.upper()}) ")
                 print("=======================================================")
                 print(report_text)
                 print("=======================================================\n")
             else:
-                print(f"[\u2717] Error de API Gemini: Respuesta HTTP {response.status}")
+                print(f"[\u2717] Error: El servidor respondió con código {response.status}")
     except Exception as e:
-        print(f"[\u2717] Error consultando al Agente de Gemini: {str(e)}")
-        print("\nReporte local recolectado:")
-        print(diagnostic_report)
+        print(f"[\u2717] Error al conectar con el backend para análisis: {str(e)}")
 
 def main():
     parser = argparse.ArgumentParser(
@@ -252,9 +320,12 @@ def main():
     # Subcommand: health
     subparsers.add_parser("health", help="Verifica el estado de salud de la API, base de datos y llaves API.")
     
-    # Subcommand: test
-    parser_test = subparsers.add_parser("test", help="Prueba el motor de recomendación agéntica con una consulta.")
-    parser_test.add_argument("query", help="Texto de la consulta que enviará el cliente.")
+    # Subcommand: run (devops system operations)
+    parser_run = subparsers.add_parser("run", help="Envía una instrucción operativa al agente para planificar y ejecutar mejoras.")
+    parser_run.add_argument("instruction", help="Texto de la instrucción de mantenimiento (ej: 'limpiar logs de docker y optimizar sqlite').")
+    
+    # Subcommand: audit (DB audit history)
+    subparsers.add_parser("audit", help="Inspecciona el historial de auditoría de las operaciones realizadas por el agente.")
     
     # Subcommand: logs
     parser_logs = subparsers.add_parser("logs", help="Inspecciona el archivo de logs del agente agéntico en el servidor.")
@@ -267,8 +338,10 @@ def main():
     
     if args.command == "health":
         cmd_health(args)
-    elif args.command == "test":
-        cmd_test(args)
+    elif args.command == "run":
+        cmd_run(args)
+    elif args.command == "audit":
+        cmd_audit(args)
     elif args.command == "logs":
         cmd_logs(args)
     elif args.command == "analyze":

@@ -69,6 +69,15 @@ class EvaluacionDB(Base):
     comentario = Column(String(500), nullable=False)
     creado_at = Column(DateTime, default=datetime.utcnow)
 
+class AuditoriaAgenteDB(Base):
+    __tablename__ = "auditoria_agente"
+    id = Column(Integer, primary_key=True, index=True)
+    instruccion = Column(String(500), nullable=False)
+    plan_propuesto = Column(String(5000), nullable=False) # JSON format string
+    estado = Column(String(50), nullable=False, default="pendiente") # pendiente, aprobado, rechazado, completado, fallido
+    detalles_ejecucion = Column(String(5000), nullable=True) # JSON output string
+    creado_at = Column(DateTime, default=datetime.utcnow)
+
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="4S — Plataforma Web de Servicios de Oficio", version="1.0.0")
@@ -177,6 +186,24 @@ class EvaluationResponse(BaseModel):
     solicitud_id: int
     puntuacion: int
     comentario: str
+    creado_at: datetime
+
+    class Config:
+        orm_mode = True
+
+class AgentRunRequest(BaseModel):
+    instruccion: str = Field(..., min_length=5)
+
+class AgentAuditStatusUpdateRequest(BaseModel):
+    estado: str = Field(..., pattern="^(aprobado|rechazado|completado|fallido)$")
+    detalles_ejecucion: Optional[str] = None
+
+class AgentAuditResponse(BaseModel):
+    id: int
+    instruccion: str
+    plan_propuesto: str
+    estado: str
+    detalles_ejecucion: Optional[str]
     creado_at: datetime
 
     class Config:
@@ -399,20 +426,76 @@ def get_evaluations(maestro_id: int):
     db.close()
     return evals
 
-# Agentic Recommendation and Health Check Endpoints
-@app.post("/api/agent/recommend")
-async def recommend_maestros_endpoint(payload: dict):
-    from app.agentic_component import get_agent_recommendation
+# Agentic System Operations and Health Check Endpoints
+import json
+
+@app.post("/api/agent/run")
+async def run_agent_instruction(payload: AgentRunRequest):
+    from app.agentic_component import get_agent_execution_plan
     db = SessionLocal()
     try:
-        consulta = payload.get("consulta")
-        if not consulta or len(consulta.strip()) < 5:
-            raise HTTPException(status_code=400, detail="La consulta debe tener al menos 5 caracteres.")
+        plan = await get_agent_execution_plan(payload.instruccion, db)
         
-        result = await get_agent_recommendation(consulta, db)
-        return result
+        # Save to database with status 'pendiente'
+        db_audit = AuditoriaAgenteDB(
+            instruccion=payload.instruccion,
+            plan_propuesto=json.dumps(plan),
+            estado="pendiente"
+        )
+        db.add(db_audit)
+        db.commit()
+        db.refresh(db_audit)
+        
+        return {
+            "audit_id": db_audit.id,
+            "rationale": plan.get("rationale", ""),
+            "commands": plan.get("commands", []),
+            "file_edits": plan.get("file_edits", []),
+            "source": plan.get("source", "contingency_fallback")
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+@app.post("/api/agent/audit/{audit_id}/status")
+def update_agent_audit_status(audit_id: int, payload: AgentAuditStatusUpdateRequest):
+    db = SessionLocal()
+    try:
+        db_audit = db.query(AuditoriaAgenteDB).filter(AuditoriaAgenteDB.id == audit_id).first()
+        if not db_audit:
+            raise HTTPException(status_code=404, detail="Auditoría no encontrada")
+        db_audit.estado = payload.estado
+        if payload.detalles_ejecucion is not None:
+            db_audit.detalles_ejecucion = payload.detalles_ejecucion
+        db.commit()
+        db.refresh(db_audit)
+        return {"status": "updated", "audit_id": audit_id, "estado": db_audit.estado}
     except HTTPException as he:
         raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+@app.get("/api/agent/audit", response_model=List[AgentAuditResponse])
+def get_agent_audits():
+    db = SessionLocal()
+    try:
+        audits = db.query(AuditoriaAgenteDB).order_by(AuditoriaAgenteDB.id.desc()).all()
+        return audits
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+@app.post("/api/agent/analyze")
+async def analyze_system_endpoint():
+    from app.agentic_component import get_agent_monitoring_report
+    db = SessionLocal()
+    try:
+        result = await get_agent_monitoring_report(db)
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
