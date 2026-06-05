@@ -41,6 +41,23 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
           script: |
+            # Check and install Docker if not present
+            if ! [ -x "$(command -v docker)" ]; then
+              echo "Docker not found! Installing Docker..."
+              sudo apt-get update
+              sudo apt-get install -y curl
+              curl -fsSL https://get.docker.com -o get-docker.sh
+              sudo sh get-docker.sh
+              sudo usermod -aG docker $USER
+            fi
+            
+            # Check and install Docker Compose plugin if not present
+            if ! docker compose version >/dev/null 2>&1; then
+              echo "Docker Compose not found! Installing Compose plugin..."
+              sudo apt-get update
+              sudo apt-get install -y docker-compose-plugin
+            fi
+
             # Create deployment directory if not exists, and navigate there
             mkdir -p ~/test-4S
             cd ~/test-4S
@@ -63,11 +80,11 @@ jobs:
             
             # Deploy using Docker Compose
             echo "Stopping old containers..."
-            docker-compose down || true
+            sudo docker compose down || docker-compose down || true
             
             echo "Building and launching new containers..."
-            docker-compose build --no-cache
-            docker-compose up -d
+            sudo docker compose build --no-cache
+            sudo docker compose up -d
             
             # Warm up and health check
             echo "Waiting for app to warm up..."
